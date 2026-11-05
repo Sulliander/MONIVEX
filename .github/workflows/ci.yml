@@ -1,0 +1,77 @@
+name: Kontrola jakości
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - run: pip install -r requirements-dev.txt -c requirements.lock
+        working-directory: backend
+      - run: python -m pytest -q
+        working-directory: backend
+      - run: ruff check app tests migrations
+        working-directory: backend
+      - run: pip-audit -r requirements.txt
+        working-directory: backend
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm test
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm audit --audit-level=high
+        working-directory: frontend
+  containers:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: monivex-ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: docker compose build
+        env:
+          MONIVEX_SETUP_TOKEN: ci-configuration-placeholder-not-used-for-authentication
+      - name: Start i test przeglądarkowy
+        env:
+          MONIVEX_COOKIE_SECURE: 'false'
+          MONIVEX_PUBLIC_ORIGIN: http://localhost:8080
+          MONIVEX_TEST_URL: http://localhost:8080
+          MONIVEX_TEST_WORKER: '1'
+        run: |
+          export MONIVEX_SETUP_TOKEN="$(openssl rand -hex 32)"
+          export MONIVEX_TEST_SETUP_TOKEN="$MONIVEX_SETUP_TOKEN"
+          export COMPOSE_PROJECT_NAME=monivex-ci
+          docker compose up -d --wait --wait-timeout 120
+          cd frontend
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
+          cd ..
+          printf 'MONIVEX_SETUP_TOKEN=%s\nMONIVEX_COOKIE_SECURE=false\n' "$MONIVEX_SETUP_TOKEN" > /tmp/monivex-ci.env
+          chmod 600 /tmp/monivex-ci.env
+          python3 scripts/verify_worker_compose.py --project monivex-ci --env-file /tmp/monivex-ci.env --url http://localhost:8080
+      - name: Zatrzymanie kontenerów
+        if: always()
+        run: docker compose -p monivex-ci down -v
+        env:
+          MONIVEX_SETUP_TOKEN: ci-cleanup-placeholder-not-used-for-authentication

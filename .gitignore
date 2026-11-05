@@ -218,3 +218,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# MONIVEX
+node_modules/
+dist/
+*.tsbuildinfo
+*.db
+*.db-wal
+*.db-shm
+backend/.ruff_cache/
+frontend/test-results/
+frontend/playwright-report/
