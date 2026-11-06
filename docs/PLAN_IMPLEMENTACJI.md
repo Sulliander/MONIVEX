@@ -36,3 +36,8 @@ Każdy etap opiera się na poprzednich i kończy działającym przyrostem. Obecn
 ## Przyrost etapu 2
 
 Zaimplementowano niezależny worker, trwałą dzierżawę, osiem kontroli, maszynę stanów, historię i minimalny model incydentu z unikalnym otwartym wpisem. Migracja 0002 dodaje `monitors`, `check_results`, `incidents`, `worker_lease`. Ochrona i zakres: SILNIK_MONITORINGU.md; wyniki walidacji: RAPORT_ETAP_2.md. Podstawowy formularz i pauza umożliwiają testowanie silnika przez WWW; pełna edycja, zasoby i powiązania nadal należą do etapu 3. Obecna wersja to 0.2.0, nadal rozwojowa.
+
+
+## Przyrost etapu 3
+
+Migracja 0003 dodaje `groups`, `tags`, `resources`, tabele powiązań oraz licznik przydziału identyfikatorów. Monitor otrzymuje grupę, zasób, priorytet i tagi. Dodano hierarchię bez cykli, zasady agregacji stanów, CRUD, rewizje, kopiowanie i atomowe operacje zbiorcze. API sprawdza konflikty oraz powiązania, a worker odrzuca wyniki sprzed zmiany instancji lub rewizji. Konfigurator zachowuje lub jawnie zastępuje sekrety bez ich ujawniania. Etap 3 ma własne testy migracji, współbieżności, ochrony sekretów i przeglądarki; CI generuje raporty i zrzuty rzeczywistej aplikacji. Wersja 0.3.0 pozostaje rozwojowa.

@@ -8,6 +8,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from .monitoring.routes import router as monitoring_router
+from .infrastructure.routes import router as infrastructure_router
+from .monitoring.management import router as management_router
 from .config import get_settings
 from .db import get_db
 from .models import AuditEvent, Installation, Session, User
@@ -39,7 +41,7 @@ async def lifespan(app):
     yield
 
 
-app = FastAPI(title="MONIVEX API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="MONIVEX API", version="0.3.0", lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -87,7 +89,7 @@ def audit(db, action, user_id=None):
 @app.get("/api/health/ready")
 def ready(db=Depends(get_db)):
     db.execute(text("SELECT id FROM installation LIMIT 1"))
-    return {"status": "ok", "version": "0.2.0"}
+    return {"status": "ok", "version": "0.3.0"}
 
 
 @app.get("/api/setup/status")
@@ -217,8 +219,10 @@ def installation(user=Depends(current_user), db=Depends(get_db)):
         "name": row.name,
         "timezone": row.timezone,
         "language": "pl",
-        "version": "0.2.0",
+        "version": "0.3.0",
     }
 
 
+app.include_router(management_router)
 app.include_router(monitoring_router)
+app.include_router(infrastructure_router)

@@ -18,6 +18,8 @@ import {
   Settings,
   ShieldCheck,
 } from "lucide-react";
+import { TimezoneContext, useDateFormatter } from "./dates";
+import Infrastructure from "./Infrastructure";
 import { api, ApiError } from "./api";
 import {
   Monitors,
@@ -405,9 +407,14 @@ function Panel({
                     <Server size={18} />
                   )}
                   <span>{t(key)}</span>
-                  {!["overview", "settings", "monitors"].includes(key) && (
-                    <CircleHelp size={13} />
-                  )}
+                  {![
+                    "overview",
+                    "settings",
+                    "monitors",
+                    "devices",
+                    "groups",
+                    "tags",
+                  ].includes(key) && <CircleHelp size={13} />}
                 </NavLink>
               ))}
             </section>
@@ -450,30 +457,48 @@ function Panel({
               {error || installation.error?.message}
             </p>
           )}
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/settings" element={<Account />} />
-            <Route
-              path="/monitors"
-              element={
-                <Monitors
-                  canEdit={["owner", "administrator", "operator"].includes(
-                    user.role,
-                  )}
+          <TimezoneContext.Provider
+            value={installation.data?.timezone || "UTC"}
+          >
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/settings" element={<Account />} />
+              {(["resources", "groups", "tags"] as const).map((kind) => (
+                <Route
+                  key={kind}
+                  path={kind === "resources" ? "/devices" : `/${kind}`}
+                  element={
+                    <Infrastructure
+                      kind={kind}
+                      canEdit={["owner", "administrator", "operator"].includes(
+                        user.role,
+                      )}
+                    />
+                  }
                 />
-              }
-            />
-            <Route
-              path="*"
-              element={
-                <div className="empty">
-                  <CircleHelp size={38} />
-                  <h1>{t("future")}</h1>
-                  <p>{t("foundation")}</p>
-                </div>
-              }
-            />
-          </Routes>
+              ))}
+              <Route
+                path="/monitors"
+                element={
+                  <Monitors
+                    canEdit={["owner", "administrator", "operator"].includes(
+                      user.role,
+                    )}
+                  />
+                }
+              />
+              <Route
+                path="*"
+                element={
+                  <div className="empty">
+                    <CircleHelp size={38} />
+                    <h1>{t("future")}</h1>
+                    <p>{t("foundation")}</p>
+                  </div>
+                }
+              />
+            </Routes>
+          </TimezoneContext.Provider>
         </main>
       </div>
     </div>
@@ -481,16 +506,20 @@ function Panel({
 }
 function Dashboard() {
   const { t } = useTranslation();
+  const date = useDateFormatter();
   const data = useQuery({
     queryKey: ["dashboard"],
     queryFn: () => api<DashboardData>("/dashboard"),
     refetchInterval: 5000,
+    refetchIntervalInBackground: true,
   });
   const rows = data.data?.monitors || [];
   const counts = [
-    rows.length,
+    data.data?.counts?.all ?? rows.length,
     ...["UP", "DEGRADED", "DOWN", "UNKNOWN"].map(
-      (state) => rows.filter((r) => r.state === state).length,
+      (state) =>
+        data.data?.counts?.[state] ??
+        rows.filter((r) => r.state === state).length,
     ),
   ];
   return (
@@ -546,8 +575,7 @@ function Dashboard() {
               data.data.incidents.map((i) => (
                 <p key={i.id}>
                   {rows.find((r) => r.id === i.monitor_id)?.name} ·{" "}
-                  {new Date(i.started_at * 1000).toLocaleString("pl-PL")} ·{" "}
-                  {i.cause}
+                  {date(i.started_at)} · {i.cause}
                 </p>
               ))
             ) : (

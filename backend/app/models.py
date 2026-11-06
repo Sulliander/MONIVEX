@@ -8,6 +8,8 @@ from sqlalchemy import (
     Float,
     Index,
     text,
+    Table,
+    Column,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -77,6 +79,13 @@ class Monitor(Base):
     heartbeat_hash: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[float] = mapped_column(Float)
     revision: Mapped[int] = mapped_column(Integer, default=1)
+    group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("groups.id", ondelete="SET NULL")
+    )
+    resource_id: Mapped[int | None] = mapped_column(
+        ForeignKey("resources.id", ondelete="SET NULL")
+    )
+    priority: Mapped[str] = mapped_column(String(16), default="normal")
 
 
 class CheckResult(Base):
@@ -110,6 +119,7 @@ class Incident(Base):
     started_at: Mapped[float] = mapped_column(Float)
     ended_at: Mapped[float | None] = mapped_column(Float)
     cause: Mapped[str] = mapped_column(String(256))
+    resolution: Mapped[str | None] = mapped_column(String(32))
 
 
 class WorkerLease(Base):
@@ -118,3 +128,62 @@ class WorkerLease(Base):
     owner: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[float] = mapped_column(Float)
     last_cycle_at: Mapped[float] = mapped_column(Float)
+
+
+class Group(Base):
+    __table_args__ = {"sqlite_autoincrement": True}
+    __tablename__ = "groups"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    parent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("groups.id", ondelete="RESTRICT")
+    )
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class Tag(Base):
+    __table_args__ = {"sqlite_autoincrement": True}
+    __tablename__ = "tags"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(50), unique=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class Resource(Base):
+    __table_args__ = {"sqlite_autoincrement": True}
+    __tablename__ = "resources"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str] = mapped_column(Text, default="")
+    address: Mapped[str] = mapped_column(String(253), default="")
+    kind: Mapped[str] = mapped_column(String(24), default="server")
+    operating_system: Mapped[str] = mapped_column(String(100), default="")
+    environment: Mapped[str] = mapped_column(String(50), default="")
+    group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("groups.id", ondelete="SET NULL")
+    )
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+
+
+monitor_tags = Table(
+    "monitor_tags",
+    Base.metadata,
+    Column(
+        "monitor_id", ForeignKey("monitors.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column("tag_id", ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+)
+resource_tags = Table(
+    "resource_tags",
+    Base.metadata,
+    Column(
+        "resource_id", ForeignKey("resources.id", ondelete="CASCADE"), primary_key=True
+    ),
+    Column("tag_id", ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class IdCounter(Base):
+    __tablename__ = "id_counters"
+    name: Mapped[str] = mapped_column(String(32), primary_key=True)
+    next_id: Mapped[int] = mapped_column(Integer)

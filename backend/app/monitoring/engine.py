@@ -66,6 +66,7 @@ def save_result(factory, owner, snapshot, outcome, now=None):
             or not monitor
             or monitor.paused
             or monitor.last_checked_at != snapshot.last_checked_at
+            or monitor.created_at != snapshot.created_at
             or monitor.revision != snapshot.revision
         ):
             return False
@@ -105,6 +106,7 @@ def save_result(factory, owner, snapshot, outcome, now=None):
             )
         elif state in {"UP", "DEGRADED"} and active:
             active.ended_at = now
+            active.resolution = "recovered"
         db.commit()
         return True
 
@@ -129,6 +131,10 @@ def present_monitor(monitor, healthy, now=None):
     state = "PAUSED" if monitor.paused else "UNKNOWN" if stale else monitor.state
     return {
         "id": monitor.id,
+        "revision": monitor.revision,
+        "group_id": monitor.group_id,
+        "resource_id": monitor.resource_id,
+        "priority": monitor.priority or "normal",
         "name": monitor.name,
         "kind": monitor.kind,
         "config": monitor.config,

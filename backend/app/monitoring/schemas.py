@@ -1,6 +1,7 @@
 import re
 from typing import Literal
 from urllib.parse import urlsplit
+from ..infrastructure.schemas import Id, Priority
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 Kind = Literal["icmp", "tcp", "http", "dns", "tls", "smtp", "http_json", "heartbeat"]
@@ -80,6 +81,10 @@ class CheckSecrets(BaseModel):
 class MonitorInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=100)
+    group_id: Id | None = None
+    resource_id: Id | None = None
+    tag_ids: list[Id] = Field(default_factory=list, max_length=50)
+    priority: Priority = "normal"
     kind: Kind
     interval: int = Field(default=60, ge=10, le=86400)
     timeout: float = Field(default=5, ge=0.1, le=30)
@@ -120,8 +125,29 @@ class MonitorInput(BaseModel):
                 r"[A-Za-z0-9._-]{1,253}", c.domain
             ):
                 raise ValueError("Nieprawidłowa domena DNS.")
-        if self.kind not in {"http", "http_json"} and any(
-            self.secrets.reveal().values()
+        if (
+            self.kind not in {"http", "http_json"}
+            and self.secrets is not None
+            and any(self.secrets.reveal().values())
         ):
             raise ValueError("Ten typ nie obsługuje sekretów.")
         return self
+
+
+class MonitorUpdate(MonitorInput):
+    revision: int = Field(ge=1)
+    secrets: CheckSecrets | None = None
+    clear_credentials: bool = False
+
+    @model_validator(mode="after")
+    def explicit_secrets(self):
+        if self.clear_credentials and self.secrets is not None:
+            raise ValueError("Wybierz zastąpienie albo usunięcie sekretów.")
+        return self
+
+
+class DuplicateInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    revision: int = Field(ge=1)
+    name: str = Field(min_length=1, max_length=100)
+    copy_credentials: bool = False

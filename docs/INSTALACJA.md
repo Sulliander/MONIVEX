@@ -74,3 +74,8 @@ Aktualizacja etapu 1 do 2: wykonaj kopię offline przy zatrzymanym API i workerz
 
 
 Po przejściu testu przeglądarkowego z `MONIVEX_TEST_WORKER=1` na jednorazowym stacku można sprawdzić niezależność workera: `python3 scripts/verify_worker_compose.py --project NAZWA_PROJEKTU_TESTOWEGO --env-file PLIK_TESTOWY --url ADRES_TESTOWEGO_WEB`. Polecenie celowo zatrzymuje API testowego projektu, sprawdza przyrost wyników w workerze i uruchamia API ponownie. Nie uruchamiaj go na produkcji. W CI jest wykonywane po Chromium, a dane są usuwane po testach.
+
+
+## Aktualizacja do 0.3.0
+
+Zachowaj dane i klucz szyfrowania; przed aktualizacją wykonaj kopię offline przy zatrzymanych API i workerze. `docker compose up --build -d` wykona migrację `0003`: zasoby, grupy, tagi, powiązania i przydział identyfikatorów bez przepisywania tabeli monitorów. Testy obejmują zachowanie wcześniejszych wyników, incydentów i sesji. Cofnięcie tej migracji usuwa nowe metadane — nie stosuj go jako zamiennika backupu. Poradnik nowych ekranów: ZARZADZANIE_INFRASTRUKTURA.md; artefakty CI: TESTY_I_ZRZUTY.md.

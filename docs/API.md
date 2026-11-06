@@ -41,3 +41,20 @@ Przykładowa publiczna konfiguracja TCP (cel musi zostać dopuszczony przez admi
 Typy `kind`: `icmp`, `tcp`, `http`, `dns`, `tls`, `smtp`, `http_json`, `heartbeat`. Szczegółowy schemat generuje OpenAPI. HTTP: `url`, `method`, `expected_codes`, `follow_redirects`, `contains`, `warning_ms`; JSON dodatkowo `json_path` (lista kluczy/indeksów) i `expected_value` (prosta wartość JSON). DNS: `host` serwera, `port`, `domain`, `record_type`, `expected_answer` w zapisie tekstowym rekordu. TLS: `host`, `port`, `expiry_warning_days`. SMTP: `host`, `port`, `starttls`. Heartbeat: `grace_seconds`.
 
 Opcjonalne `secrets` HTTP: `username`, `password`, `bearer`, `headers` (słownik), `body`. Nie łącz Basic i Bearer. Te dane są szyfrowane kluczem wdrożenia i nie są zwracane ponownie. Nie wkładaj sekretów do `config.url` ani do nazw monitorów. Ręczny test zwraca wyłącznie `status`, `duration_ms` i bezpieczny polski komunikat, bez treści odpowiedzi i danych uwierzytelniających.
+
+
+## Zarządzanie — etap 3
+
+- GET/POST `/api/groups`, PUT/DELETE `/api/groups/{id}` — hierarchia bez cykli; usunięcie tylko pustej grupy.
+- GET/POST `/api/tags`, PUT/DELETE `/api/tags/{id}` — unikalne tagi i powiązania.
+- GET/POST `/api/resources`, PUT/DELETE `/api/resources/{id}` — zasoby z grupą, tagami i wyliczonym stanem. Usunięcie nie usuwa monitorów.
+- GET `/api/monitors/search` — `q`, `kind`, `state`, `group_id`, `tag_id`, `resource_id`, `sort=name|priority|state|id`, `descending`, `offset`, `limit` (1–200); odpowiedź `{items,total,offset,limit}`.
+- GET/PUT/DELETE `/api/monitors/{id}` — pełna publiczna konfiguracja i edycja bez ujawniania sekretów.
+- POST `/api/monitors/{id}/duplicate` — `name`, `revision`, opcjonalne `copy_credentials=false`; nowy heartbeat zwraca nowy token tylko raz.
+- POST `/api/monitors/bulk` — `monitor_ids` (1–100), `revisions` (mapa id → rewizja), `operation=configure|pause|resume|delete`; zmiany albo wszystkie, albo żadne.
+
+PUT wymaga bieżącej `revision` w JSON, DELETE w parametrze zapytania. Konflikt → 409. Identyfikatory utworzone przez API nie są ponownie używane po usunięciu. Monitor ma `group_id`, `resource_id`, `tag_ids` i `priority=low|normal|high|critical`. Przy PUT brak `secrets` zachowuje szyfrogram, `secrets` zastępuje cały zestaw, `clear_credentials=true` usuwa go. Zmiana originu wymaga jawnego usunięcia/zastąpienia sekretów. Typ istniejącego monitora jest stały.
+
+Konfiguracja zbiorcza zmienia interwał, timeout, progi, priorytet oraz powiązania. Pominięcie pola pozostawia wartość, `group_id:null`/`resource_id:null` odłącza, `tag_ids:[]` czyści tagi. Błąd walidacji lub rewizji odrzuca całą operację. Stany wynikają z workera; konfiguracja nie przyjmuje ręcznie podanego stanu dostępności.
+
+`/api/dashboard` zwraca dodatkowo `counts` obejmujące wszystkie monitory. Starsze GET `/api/monitors` pozostaje zgodne z poprzednim formatem tablicy do 1000 pozycji; nowy interfejs używa paginacji `/search`.

@@ -68,3 +68,9 @@ def current_user(session=Depends(current_session), db=Depends(get_db)):
     if not user:
         raise HTTPException(401, "Sesja wygasła.")
     return user
+
+
+def editor(user=Depends(current_user)):
+    if user.role not in {"owner", "administrator", "operator"}:
+        raise HTTPException(403, "Brak uprawnień do zarządzania monitoringiem.")
+    return user

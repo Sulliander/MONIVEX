@@ -7,22 +7,22 @@ from pydantic import BaseModel
 from sqlalchemy import select, update, or_
 from ..config import get_settings
 from ..db import get_db
-from ..models import AuditEvent, CheckResult, Incident, Monitor
-from ..security import current_user, digest, limit_attempt
+from ..models import AuditEvent, CheckResult, Incident, Monitor, monitor_tags
+from ..security import current_user, digest, limit_attempt, editor
 from .checks import run_check
-from .engine import present_monitor, worker_status
+from .engine import present_monitor, worker_status, begin_write
+from ..infrastructure.service import (
+    validate_links,
+    set_tags,
+    tag_map,
+    allocate_monitor_id,
+)
 from .policy import PolicyError, validate_target
 from .schemas import MonitorInput
 from .vault import VaultError, decrypt, encrypt
 
 router = APIRouter(prefix="/api")
 manual_slots = threading.BoundedSemaphore(get_settings().manual_concurrency)
-
-
-def editor(user=Depends(current_user)):
-    if user.role not in {"owner", "administrator", "operator"}:
-        raise HTTPException(403, "Brak uprawnień do zarządzania monitoringiem.")
-    return user
 
 
 def monitor_or_404(db, monitor_id):
@@ -35,8 +35,9 @@ def monitor_or_404(db, monitor_id):
 @router.get("/monitors")
 def monitors(user=Depends(current_user), db=Depends(get_db)):
     healthy = worker_status(db)["status"] == "running"
+    links = tag_map(db, monitor_tags, "monitor_id")
     return [
-        present_monitor(m, healthy)
+        {**present_monitor(m, healthy), "tag_ids": links.get(m.id, [])}
         for m in db.scalars(select(Monitor).order_by(Monitor.id).limit(1000))
     ]
 
@@ -55,10 +56,16 @@ async def create_monitor(
         raise HTTPException(422, str(exc)) from None
     except (OSError, TimeoutError):
         raise HTTPException(422, "Nie można zweryfikować adresu celu.") from None
+    begin_write(db)
+    validate_links(db, payload.group_id, payload.resource_id, payload.tag_ids)
     now = time.time()
     token = secrets.token_urlsafe(32) if payload.kind == "heartbeat" else None
     row = Monitor(
+        id=allocate_monitor_id(db),
         name=payload.name,
+        group_id=payload.group_id,
+        resource_id=payload.resource_id,
+        priority=payload.priority,
         kind=payload.kind,
         config=payload.config.model_dump(),
         credentials=encrypted,
@@ -78,9 +85,12 @@ async def create_monitor(
         revision=1,
     )
     db.add(row)
+    db.flush()
+    set_tags(db, monitor_tags, "monitor_id", row.id, payload.tag_ids)
     db.add(AuditEvent(user_id=user_id, action="monitor.created", created_at=int(now)))
     db.commit()
     result = present_monitor(row, False)
+    result["tag_ids"] = payload.tag_ids
     if token:
         result["heartbeat_token"] = token
     return result
@@ -218,6 +228,14 @@ def dashboard(user=Depends(current_user), db=Depends(get_db)):
         present_monitor(m, worker["status"] == "running")
         for m in db.scalars(select(Monitor).order_by(Monitor.id).limit(1000))
     ]
+    from .management import state_expression
+    from sqlalchemy import func
+
+    expression = state_expression(worker["status"] == "running")
+    counts = dict(
+        db.execute(select(expression, func.count()).group_by(expression)).all()
+    )
+    counts["all"] = sum(counts.values())
     active = db.scalars(
         select(Incident)
         .where(Incident.ended_at.is_(None))
@@ -226,6 +244,7 @@ def dashboard(user=Depends(current_user), db=Depends(get_db)):
     )
     return {
         "monitoring_available": True,
+        "counts": counts,
         "worker_status": worker["status"],
         "last_cycle_at": worker["last_cycle_at"],
         "monitors": rows,

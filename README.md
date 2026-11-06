@@ -2,9 +2,19 @@
 
 Polskojęzyczna, otwarta platforma self-hosted do monitorowania infrastruktury. Licencja Apache 2.0.
 
-**Stan: 0.2.0 — fundamenty i silnik monitoringu, wersja rozwojowa.** Działa kreator właściciela, logowanie, sesje i polski panel z trzema motywami. Niezależny worker wykonuje kontrole ICMP, TCP, HTTP/HTTPS, DNS, TLS, SMTP, HTTP JSON i heartbeat, zapisuje historię, potwierdza awarie/powroty i atomowo prowadzi incydenty. WWW pozwala dodawać, wstrzymywać i testować monitory oraz przeglądać wyniki. Dashboard wykrywa nieaktualność workera i danych. Powiadomienia, raporty i pełne zarządzanie infrastrukturą pozostają kolejnymi etapami.
+**Stan: 0.3.0 — wersja rozwojowa.** MONIVEX ma bezpieczną inicjalizację właściciela, sesje, polski panel, niezależny worker i rzeczywiste kontrole usług. Możesz zarządzać urządzeniami, hierarchią grup i tagami, konfigurować i edytować monitory, duplikować je oraz wykonywać operacje zbiorcze. Pulpit pokazuje faktyczne wyniki i wykrywa nieaktualność danych.
 
-Kontrole sieciowe wymagają jawnego dopuszczenia podsieci przez administratora. ICMP zależy od uprawnień gniazd ping w kernelu; w runtime testowym nie był dostępny. [Zakres, bezpieczeństwo i ograniczenia silnika](docs/SILNIK_MONITORINGU.md).
+Obsługiwane kontrole: TCP, HTTP/HTTPS, DNS, certyfikaty TLS, SMTP/STARTTLS, HTTP JSON, heartbeat i ICMP (wymaga odpowiednich uprawnień kernela; lokalny runtime testowy go nie udostępniał). Kontrole sieciowe wymagają jawnej polityki CIDR. Powiadomienia, rozbudowane raporty, MFA i automatyczny backup pozostają kolejnymi etapami.
+
+[Zarządzanie infrastrukturą](docs/ZARZADZANIE_INFRASTRUKTURA.md) · [Silnik i bezpieczeństwo](docs/SILNIK_MONITORINGU.md) · [Testy i galeria Actions](docs/TESTY_I_ZRZUTY.md)
+
+## Rzeczywisty interfejs
+
+Poniżej działająca, jednorazowa instalacja testowa z prawdziwym heartbeat — bez podstawianych wyników. Więcej ekranów i raporty znajdują się w artefaktach GitHub Actions.
+
+![Pulpit MONIVEX w ciemnym motywie — rzeczywista instalacja testowa](docs/images/dashboard-dark.png)
+
+![Urządzenie powiązane z rzeczywistym monitorem w jasnym motywie](docs/images/resources-light.png)
 
 ## Szybki start lokalny
 
@@ -25,6 +35,9 @@ Domyślnie port jest przypisany do loopback; dla LAN ustaw odpowiedni interfejs 
 
 ## Dokumentacja
 
+- [Raport etapu 3](docs/RAPORT_ETAP_3.md)
+- [Zarządzanie infrastrukturą](docs/ZARZADZANIE_INFRASTRUKTURA.md)
+- [Testy i zrzuty ekranów](docs/TESTY_I_ZRZUTY.md)
 - [Silnik monitoringu i polityka celów](docs/SILNIK_MONITORINGU.md)
 - [Raport etapu 2](docs/RAPORT_ETAP_2.md)
 
