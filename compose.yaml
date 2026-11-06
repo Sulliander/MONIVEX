@@ -1,0 +1,74 @@
+name: monivex
+services:
+  migrate:
+    build: ./backend
+    image: monivex-api:local
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      MONIVEX_DATABASE_URL: sqlite:////data/monivex.db
+    volumes:
+      - data:/data
+    restart: "no"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  api:
+    image: monivex-api:local
+    build: ./backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      MONIVEX_DATABASE_URL: sqlite:////data/monivex.db
+      MONIVEX_SETUP_TOKEN: ${MONIVEX_SETUP_TOKEN:?Ustaw sekret inicjalizacyjny}
+      MONIVEX_PUBLIC_ORIGIN: ${MONIVEX_PUBLIC_ORIGIN:-http://localhost:8080}
+      MONIVEX_COOKIE_SECURE: ${MONIVEX_COOKIE_SECURE:-true}
+      MONIVEX_ALLOWED_NETWORKS: ${MONIVEX_ALLOWED_NETWORKS:-}
+      MONIVEX_ENCRYPTION_KEY: ${MONIVEX_ENCRYPTION_KEY:-}
+    volumes:
+      - data:/data
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  worker:
+    image: monivex-api:local
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      MONIVEX_DATABASE_URL: sqlite:////data/monivex.db
+      MONIVEX_ALLOWED_NETWORKS: ${MONIVEX_ALLOWED_NETWORKS:-}
+      MONIVEX_ENCRYPTION_KEY: ${MONIVEX_ENCRYPTION_KEY:-}
+      MONIVEX_WORKER_CONCURRENCY: ${MONIVEX_WORKER_CONCURRENCY:-10}
+    volumes:
+      - data:/data
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker_health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  web:
+    build: ./frontend
+    ports:
+      - "${MONIVEX_BIND_ADDRESS:-127.0.0.1}:${MONIVEX_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "wget", "-Y", "off", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/api/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+volumes:
+  data:

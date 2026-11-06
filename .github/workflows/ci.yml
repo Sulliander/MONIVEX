@@ -1,0 +1,125 @@
+name: Kontrola jakości
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: monivex-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements*
+      - run: pip install -r requirements-dev.txt -c requirements.lock
+        working-directory: backend
+      - run: python -m pytest -q --junitxml=../reports/backend.xml
+        working-directory: backend
+      - name: Podsumuj testy backendu
+        if: always()
+        run: python3 scripts/summarize_junit.py reports/backend.xml --name Backend
+      - run: ruff check app tests migrations ../scripts
+        working-directory: backend
+      - run: pip-audit -r requirements.txt
+        working-directory: backend
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: backend-junit
+          path: reports/backend.xml
+          retention-days: 7
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm test -- --reporter=default --reporter=junit --outputFile.junit=../reports/frontend.xml
+        working-directory: frontend
+      - name: Podsumuj testy interfejsu
+        if: always()
+        run: python3 scripts/summarize_junit.py reports/frontend.xml --name Frontend
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: frontend-junit
+          path: reports/frontend.xml
+          retention-days: 7
+      - run: npm run lint
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm audit --audit-level=high
+        working-directory: frontend
+  containers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      COMPOSE_PROJECT_NAME: monivex-ci
+      MONIVEX_COOKIE_SECURE: 'false'
+      MONIVEX_PUBLIC_ORIGIN: http://localhost:8080
+      MONIVEX_TEST_URL: http://localhost:8080
+      MONIVEX_TEST_WORKER: '1'
+      MONIVEX_TEST_MANAGEMENT: '1'
+      MONIVEX_SCREENSHOTS: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Przygotuj jednorazową konfigurację
+        run: |
+          umask 077
+          printf 'MONIVEX_SETUP_TOKEN=%s\nMONIVEX_ENCRYPTION_KEY=%s\nMONIVEX_COOKIE_SECURE=false\nMONIVEX_PUBLIC_ORIGIN=http://localhost:8080\n' "$(openssl rand -hex 32)" "$(openssl rand -base64 32 | tr '/+' '_-')" > /tmp/monivex-ci.env
+      - name: Buduj i uruchom stack
+        run: docker compose --env-file /tmp/monivex-ci.env up --build -d --wait --wait-timeout 150
+      - name: Zainstaluj narzędzia przeglądarki
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Test pełnego przepływu aplikacji
+        working-directory: frontend
+        run: |
+          export MONIVEX_TEST_SETUP_TOKEN="$(sed -n 's/^MONIVEX_SETUP_TOKEN=//p' /tmp/monivex-ci.env)"
+          npx playwright test
+      - name: Sprawdź ciągłość workera bez API
+        run: python3 scripts/verify_worker_compose.py --project monivex-ci --env-file /tmp/monivex-ci.env --url http://localhost:8080
+      - name: Zbuduj galerię dowodów
+        if: always()
+        run: |
+          python3 scripts/build_evidence_gallery.py
+          python3 scripts/summarize_junit.py frontend/artifacts/test-results.xml --name Przeglądarka
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: monivex-ui-evidence-${{ github.run_number }}
+          path: |
+            frontend/artifacts/index.html
+            frontend/artifacts/screenshots/*.png
+            frontend/artifacts/test-results.xml
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Podsumowanie
+        if: always()
+        run: |
+          printf '### MONIVEX — testy i zrzuty\nGaleria ekranów, bezpieczne zrzuty PNG i raport JUnit są dostępne w artefakcie `monivex-ui-evidence`. Dane pochodzą z jednorazowej instalacji i rzeczywistych testów.\n' >> "$GITHUB_STEP_SUMMARY"
+      - name: Zatrzymaj i usuń dane testowe
+        if: always()
+        run: docker compose --env-file /tmp/monivex-ci.env down -v
