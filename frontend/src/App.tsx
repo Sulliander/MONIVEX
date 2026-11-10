@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
+import { NavLink, Route, Routes } from "react-router-dom";
 import {
   Activity,
   ArrowRight,
@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { TimezoneContext, useDateFormatter } from "./dates";
 import Infrastructure from "./Infrastructure";
+import Login from "./Login";
+import Account from "./Account";
 import { api, ApiError } from "./api";
 import {
   Monitors,
@@ -37,12 +39,24 @@ const schema = z.object({
   token: z.string().min(32),
 });
 type Setup = z.infer<typeof schema>;
-type User = { id: number; username: string; role: string };
+type User = {
+  id: number;
+  username: string;
+  role: string;
+  setup_required?: boolean;
+};
 export default function App() {
   const { t } = useTranslation();
   const client = useQueryClient();
+  const [notice, setNotice] = useState("");
   useEffect(() => {
-    const expired = () => {
+    const expired = (event: Event) => {
+      void client.cancelQueries();
+      setNotice(
+        event instanceof CustomEvent && typeof event.detail === "string"
+          ? event.detail
+          : "Sesja wygasła lub została zakończona. Zaloguj się ponownie.",
+      );
       sessionStorage.removeItem("csrf");
       client.setQueryData(["me"], null);
       client.removeQueries({
@@ -70,7 +84,14 @@ export default function App() {
   });
   const user = useQuery({
     queryKey: ["me"],
-    queryFn: () => api<User>("/auth/me"),
+    queryFn: async () => {
+      const me = await api<User>("/auth/me");
+      if (!sessionStorage.getItem("csrf")) {
+        const result = await api<{ csrf_token: string }>("/auth/csrf", "POST");
+        sessionStorage.setItem("csrf", result.csrf_token);
+      }
+      return me;
+    },
     enabled: setup.data?.initialized === true,
   });
   const refresh = async () => {
@@ -119,7 +140,13 @@ export default function App() {
       ) : !user.data ? (
         <div className="auth-shell">
           {themeSelect}
-          <Login done={refresh} />
+          <Login
+            done={async () => {
+              setNotice("");
+              await refresh();
+            }}
+            notice={notice}
+          />
         </div>
       ) : (
         <Panel user={user.data} themeSelect={themeSelect} />
@@ -290,61 +317,6 @@ function Wizard({ done }: { done: () => Promise<void> }) {
     </main>
   );
 }
-function Login({ done }: { done: () => Promise<void> }) {
-  const { t } = useTranslation();
-  const navigate = useNavigate();
-  const [error, setError] = useState("");
-  const {
-    register,
-    handleSubmit,
-    formState: { isSubmitting },
-  } = useForm<{ username: string; password: string }>();
-  async function submit(data: { username: string; password: string }) {
-    try {
-      const result = await api<{ csrf_token: string }>(
-        "/auth/login",
-        "POST",
-        data,
-      );
-      sessionStorage.setItem("csrf", result.csrf_token);
-      navigate("/");
-      await done();
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-  return (
-    <main className="auth-card">
-      <Brand />
-      <p className="eyebrow">{t("tagline")}</p>
-      <h1>{t("login")}</h1>
-      <form onSubmit={handleSubmit(submit)}>
-        <label>
-          {t("username")}
-          <input autoComplete="username" required {...register("username")} />
-        </label>
-        <label>
-          {t("password")}
-          <input
-            type="password"
-            autoComplete="current-password"
-            required
-            {...register("password")}
-          />
-        </label>
-        {error && (
-          <p role="alert" className="error">
-            {error}
-          </p>
-        )}
-        <Button disabled={isSubmitting}>
-          {isSubmitting ? t("loading") : t("login")}
-          <ArrowRight size={16} />
-        </Button>
-      </form>
-    </main>
-  );
-}
 const sections = [
   { key: "dashboard", items: ["overview"] },
   { key: "infrastructure", items: ["devices", "monitors", "groups", "tags"] },
@@ -373,6 +345,7 @@ function Panel({
   async function logout() {
     try {
       await api("/auth/logout", "POST");
+      await client.cancelQueries();
       sessionStorage.removeItem("csrf");
       client.setQueryData(["me"], null);
       client.removeQueries({
@@ -390,7 +363,10 @@ function Panel({
       <aside>
         <Brand />
         <nav>
-          {sections.map((section) => (
+          {(user.setup_required
+            ? [{ key: "administration", items: ["settings"] }]
+            : sections
+          ).map((section) => (
             <section key={section.key}>
               <p>{t(section.key)}</p>
               {section.items.map((key) => (
@@ -460,44 +436,50 @@ function Panel({
           <TimezoneContext.Provider
             value={installation.data?.timezone || "UTC"}
           >
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/settings" element={<Account />} />
-              {(["resources", "groups", "tags"] as const).map((kind) => (
+            {user.setup_required ? (
+              <Account />
+            ) : (
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/settings" element={<Account />} />
+                {(["resources", "groups", "tags"] as const).map((kind) => (
+                  <Route
+                    key={kind}
+                    path={kind === "resources" ? "/devices" : `/${kind}`}
+                    element={
+                      <Infrastructure
+                        kind={kind}
+                        canEdit={[
+                          "owner",
+                          "administrator",
+                          "operator",
+                        ].includes(user.role)}
+                      />
+                    }
+                  />
+                ))}
                 <Route
-                  key={kind}
-                  path={kind === "resources" ? "/devices" : `/${kind}`}
+                  path="/monitors"
                   element={
-                    <Infrastructure
-                      kind={kind}
+                    <Monitors
                       canEdit={["owner", "administrator", "operator"].includes(
                         user.role,
                       )}
                     />
                   }
                 />
-              ))}
-              <Route
-                path="/monitors"
-                element={
-                  <Monitors
-                    canEdit={["owner", "administrator", "operator"].includes(
-                      user.role,
-                    )}
-                  />
-                }
-              />
-              <Route
-                path="*"
-                element={
-                  <div className="empty">
-                    <CircleHelp size={38} />
-                    <h1>{t("future")}</h1>
-                    <p>{t("foundation")}</p>
-                  </div>
-                }
-              />
-            </Routes>
+                <Route
+                  path="*"
+                  element={
+                    <div className="empty">
+                      <CircleHelp size={38} />
+                      <h1>{t("future")}</h1>
+                      <p>{t("foundation")}</p>
+                    </div>
+                  }
+                />
+              </Routes>
+            )}
           </TimezoneContext.Provider>
         </main>
       </div>
@@ -584,96 +566,6 @@ function Dashboard() {
           </section>
         </>
       )}
-    </>
-  );
-}
-function Account() {
-  const { t } = useTranslation();
-  const client = useQueryClient();
-  const [message, setMessage] = useState("");
-  const [confirm, setConfirm] = useState(false);
-  const {
-    register,
-    handleSubmit,
-    formState: { isSubmitting },
-  } = useForm<{ current_password: string; new_password: string }>();
-  async function invalidate() {
-    sessionStorage.removeItem("csrf");
-    client.setQueryData(["me"], null);
-    client.removeQueries({
-      predicate: (q) => !["me", "setup"].includes(String(q.queryKey[0])),
-    });
-  }
-  async function password(data: {
-    current_password: string;
-    new_password: string;
-  }) {
-    try {
-      await api("/auth/password", "POST", data);
-      await invalidate();
-    } catch (e) {
-      setMessage((e as Error).message);
-    }
-  }
-  async function all() {
-    try {
-      await api("/auth/logout-all", "POST");
-      await invalidate();
-    } catch (e) {
-      setMessage((e as Error).message);
-    }
-  }
-  return (
-    <>
-      <h1>{t("settings")}</h1>
-      <section className="card account">
-        <h2>{t("account")}</h2>
-        <form onSubmit={handleSubmit(password)}>
-          <label>
-            {t("currentPassword")}
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              {...register("current_password")}
-            />
-          </label>
-          <label>
-            {t("newPassword")}
-            <input
-              type="password"
-              autoComplete="new-password"
-              minLength={12}
-              maxLength={256}
-              required
-              {...register("new_password")}
-            />
-          </label>
-          <Button disabled={isSubmitting}>{t("changePassword")}</Button>
-        </form>
-        {message && (
-          <p role="alert" className="error">
-            {message}
-          </p>
-        )}
-        <hr />
-        <Button variant="outline" onClick={() => setConfirm(true)}>
-          {t("logoutAll")}
-        </Button>
-        {confirm && (
-          <div
-            role="alertdialog"
-            aria-label={t("confirmAll")}
-            className="confirmation"
-          >
-            <p>{t("confirmAll")}</p>
-            <Button variant="outline" onClick={() => setConfirm(false)}>
-              {t("cancel")}
-            </Button>
-            <Button onClick={() => void all()}>{t("logoutAll")}</Button>
-          </div>
-        )}
-      </section>
     </>
   );
 }

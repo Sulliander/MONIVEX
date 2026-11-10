@@ -134,12 +134,23 @@ def test_dashboard_staleness_and_history_limits(logged_in, database):
     assert logged_in.get(f"/api/monitors/{mid}/results?limit=1001").status_code == 422
 
 
-def test_upgrade_preserves_existing_owner_and_session(logged_in):
+def test_upgrade_preserves_existing_owner_and_session(logged_in, database):
     from alembic import command
     from alembic.config import Config
 
     command.downgrade(Config("alembic.ini"), "0001")
-    assert logged_in.get("/api/auth/me").status_code == 200
+    # An upgraded API requires its migrations before serving requests. Inspect
+    # the old schema directly; the original cookie must work after upgrading.
+    from app.security import digest
+
+    with database() as db:
+        assert (
+            db.connection().exec_driver_sql("SELECT role FROM users").scalar()
+            == "owner"
+        )
+        assert db.connection().exec_driver_sql(
+            "SELECT token_hash FROM sessions"
+        ).scalar() == digest(logged_in.cookies.get("monivex_session"))
     command.upgrade(Config("alembic.ini"), "head")
     assert logged_in.get("/api/auth/me").json()["role"] == "owner"
     assert logged_in.get("/api/setup/status").json()["initialized"]

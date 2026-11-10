@@ -101,6 +101,11 @@ jobs:
           npx playwright test
       - name: Sprawdź ciągłość workera bez API
         run: python3 scripts/verify_worker_compose.py --project monivex-ci --env-file /tmp/monivex-ci.env --url http://localhost:8080
+      - name: Sprawdź profil publiczny przez lokalne HTTPS
+        run: |
+          docker tag monivex-api:local monivex-api:0.4.0
+          docker tag monivex-ci-web:latest monivex-web:0.4.0
+          python3 scripts/verify_public_https.py
       - name: Zbuduj galerię dowodów
         if: always()
         run: |

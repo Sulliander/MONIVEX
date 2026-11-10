@@ -14,11 +14,11 @@ Kolejne migracje wprowadzą resources, groups (parent_id), tags i tabele powiąz
 
 ## API i bezpieczeństwo
 
-JSON, prefiks `/api`, statusy HTTP, OpenAPI. Pydantic ogranicza rozmiary pól. Sekret inicjalizacji minimum 32 znaki, dostarczany przez administratora poza WWW, przekazywany nagłówkiem. Singleton w transakcji chroni przed równoczesnym utworzeniem dwóch właścicieli. Brak rejestracji publicznej i endpointu resetującego instalację.
+JSON, prefiks `/api`, statusy HTTP. W 0.4.0 publiczne endpointy eksploratora OpenAPI są wyłączone; schemat można wygenerować offline przez `app.openapi()`. Pydantic ogranicza rozmiary pól. Sekret inicjalizacji minimum 32 znaki, dostarczany przez administratora poza WWW, przekazywany nagłówkiem. Singleton w transakcji chroni przed równoczesnym utworzeniem dwóch właścicieli. Brak rejestracji publicznej i endpointu resetującego instalację.
 
-Sesje serwerowe: token 256-bitowy, wyłącznie hash w bazie, HttpOnly, SameSite Strict, Secure domyślnie, stała ważność 12 godzin. CSRF: dopasowanie Origin i token per sesja na operacjach modyfikujących. Logowanie i inicjalizacja również wymagają dokładnego Origin. CORS nie jest otwierany. Brak zaufania do dowolnych nagłówków proxy. Limity logowania są trwałe, współdzielone przez procesy API (10 prób / 15 minut). Nginx sprawia, że limit jest wspólny dla instalacji; identyfikacja klienta za zaufanym proxy wymaga przyszłej konfiguracji.
+Sesje serwerowe: token 256-bitowy, wyłącznie hash w bazie, HttpOnly, SameSite Strict, Secure domyślnie, stała ważność 12 godzin. CSRF: dopasowanie Origin i token per sesja na operacjach modyfikujących. Logowanie i inicjalizacja również wymagają dokładnego Origin. CORS nie jest otwierany. Brak zaufania do dowolnych nagłówków proxy. Limity logowania są trwałe, współdzielone przez procesy API (10 prób / 15 minut). Nginx sprawia, że limit jest wspólny dla instalacji; profil publiczny 0.4.0 dodaje ścisły łańcuch zaufania proxy oraz niezależny limit konta.
 
-Nie przechowujemy haseł i tokenów w logach ani odpowiedziach walidacji. Panel nie zmienia sekretów uruchomieniowych. Bez roota i bez Docker Socket. Obsługa dodatkowych ról i TOTP wymaga etapu 6, nie deklarujemy ich obecnie. Polityka SSRF i pinning sprawdzonych adresów DNS muszą poprzedzić połączenia monitoringu w etapie 2; w etapie 1 użytkownik nie inicjuje połączeń do hostów.
+Nie przechowujemy haseł i tokenów w logach ani odpowiedziach walidacji. Panel nie zmienia sekretów uruchomieniowych. Bez roota i bez Docker Socket. Zarządzanie dodatkowymi kontami pozostaje przyszłym zakresem; TOTP wdrożono w przyroście bezpieczeństwa 0.4.0. Polityka SSRF i pinning sprawdzonych adresów DNS muszą poprzedzić połączenia monitoringu w etapie 2; w etapie 1 użytkownik nie inicjuje połączeń do hostów.
 
 ## Kolejność i kryteria odbioru
 
@@ -41,3 +41,7 @@ Zaimplementowano niezależny worker, trwałą dzierżawę, osiem kontroli, maszy
 ## Przyrost etapu 3
 
 Migracja 0003 dodaje `groups`, `tags`, `resources`, tabele powiązań oraz licznik przydziału identyfikatorów. Monitor otrzymuje grupę, zasób, priorytet i tagi. Dodano hierarchię bez cykli, zasady agregacji stanów, CRUD, rewizje, kopiowanie i atomowe operacje zbiorcze. API sprawdza konflikty oraz powiązania, a worker odrzuca wyniki sprzed zmiany instancji lub rewizji. Konfigurator zachowuje lub jawnie zastępuje sekrety bez ich ujawniania. Etap 3 ma własne testy migracji, współbieżności, ochrony sekretów i przeglądarki; CI generuje raporty i zrzuty rzeczywistej aplikacji. Wersja 0.3.0 pozostaje rozwojowa.
+
+## Przyrost bezpieczeństwa 0.4.0
+
+Na prośbę użytkownika przed kolejnymi modułami dodano bezpieczeństwo konta i przygotowanie publicznego HTTPS. Nie oznacza to ukończenia planowanego etapu incydentów/alertów ani całej administracji. Migracja 0004: szyfrowany aktywny i oczekujący sekret TOTP, licznik zaakceptowanego kroku, wyzwania logowania, hashe kodów odzyskiwania, metadane sesji i polityka 2FA administratorów. Zachowano modularny monolit, osobny worker i SQLite. Sesja powstaje po wymaganych składnikach. Wszystkie wrażliwe przejścia i zużycie kodów są serializowane transakcjami SQLite. Osobny profil Caddy nie publikuje API, bazy i workera. Raport: RAPORT_0_4_0.md.

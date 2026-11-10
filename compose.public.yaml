@@ -1,0 +1,111 @@
+# Samodzielny profil VPS. Nie łącz jako override z compose.yaml.
+name: monivex-public
+services:
+  migrate:
+    build: ./backend
+    image: monivex-api:0.4.0
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      MONIVEX_DATABASE_URL: sqlite:////data/monivex.db
+    volumes: [data:/data]
+    restart: "no"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [private]
+  api:
+    build: ./backend
+    image: monivex-api:0.4.0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      MONIVEX_DATABASE_URL: sqlite:////data/monivex.db
+      MONIVEX_SETUP_TOKEN: ${MONIVEX_SETUP_TOKEN:?Ustaw sekret inicjalizacyjny}
+      MONIVEX_ENCRYPTION_KEY: ${MONIVEX_ENCRYPTION_KEY:?Ustaw i zachowaj klucz szyfrowania}
+      MONIVEX_PUBLIC_ORIGIN: https://${MONIVEX_DOMAIN:?Ustaw domenę bez protokołu i ścieżki}
+      MONIVEX_COOKIE_SECURE: 'true'
+      MONIVEX_PUBLIC_PROFILE: 'true'
+      MONIVEX_TRUSTED_PROXIES: 172.30.44.3/32
+      MONIVEX_ALLOWED_NETWORKS: ${MONIVEX_ALLOWED_NETWORKS:-}
+    volumes: [data:/data]
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks:
+      private:
+        ipv4_address: 172.30.44.4
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  worker:
+    image: monivex-api:0.4.0
+    command: ["python", "-m", "app.worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      MONIVEX_DATABASE_URL: sqlite:////data/monivex.db
+      MONIVEX_ENCRYPTION_KEY: ${MONIVEX_ENCRYPTION_KEY:?Ustaw klucz szyfrowania}
+      MONIVEX_ALLOWED_NETWORKS: ${MONIVEX_ALLOWED_NETWORKS:-}
+      MONIVEX_WORKER_CONCURRENCY: ${MONIVEX_WORKER_CONCURRENCY:-10}
+    volumes: [data:/data]
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks: [private]
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker_health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  web:
+    image: monivex-web:0.4.0
+    build: ./frontend
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - ./deploy/nginx.public.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    networks:
+      private:
+        ipv4_address: 172.30.44.3
+  caddy:
+    image: caddy:2.11.9-alpine@sha256:78bd35025c7ba85961dd149ae670315129954e77abe2383ac47c89106b35ade9
+    depends_on: [web]
+    environment:
+      MONIVEX_DOMAIN: ${MONIVEX_DOMAIN:?Ustaw domenę}
+      MONIVEX_ACME_EMAIL: ${MONIVEX_ACME_EMAIL:?Ustaw e-mail do obsługi certyfikatu}
+      # Keep inherited exclusions and connect to local Docker services directly.
+      NO_PROXY: ${NO_PROXY:-},web,api,localhost,127.0.0.1
+      no_proxy: ${no_proxy:-},web,api,localhost,127.0.0.1
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    networks:
+      private:
+        ipv4_address: 172.30.44.2
+volumes:
+  data:
+  caddy_data:
+  caddy_config:
+networks:
+  private:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.44.0/24
+          # Keep dynamic migrate/worker addresses away from the trusted proxy IPs.
+          ip_range: 172.30.44.128/25

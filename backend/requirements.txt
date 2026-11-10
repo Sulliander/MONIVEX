@@ -9,3 +9,4 @@ cryptography==50.0.2
 starlette==1.10.0
 dnspython==2.9.0
 httpcore==1.0.9
+qrcode==8.2

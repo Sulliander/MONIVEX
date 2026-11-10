@@ -1,35 +1,34 @@
 import secrets
 import time
 from contextlib import asynccontextmanager
-from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from sqlalchemy import delete, select, text
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, OperationalError
 from .monitoring.routes import router as monitoring_router
 from .infrastructure.routes import router as infrastructure_router
 from .monitoring.management import router as management_router
 from .config import get_settings
 from .db import get_db
-from .models import AuditEvent, Installation, Session, User
-from .schemas import LoginInput, PasswordInput, SetupInput
+from .models import AuditEvent, Installation, User
+from .schemas import SetupInput
 from .security import (
-    COOKIE,
-    DUMMY_HASH,
-    current_session,
     current_user,
-    digest,
     hasher,
     limit_attempt,
     require_origin,
-    verify,
+    client_ip,
+    validate_public_settings,
 )
+from .auth.routes import router as auth_router
 
 
 @asynccontextmanager
 async def lifespan(app):
     settings = get_settings()
+    validate_public_settings()
     if settings.setup_token and len(settings.setup_token) < 32:
         raise RuntimeError("Sekret inicjalizacyjny musi mieć co najmniej 32 znaki.")
     from .monitoring.policy import Policy
@@ -41,7 +40,14 @@ async def lifespan(app):
     yield
 
 
-app = FastAPI(title="MONIVEX API", version="0.3.0", lifespan=lifespan)
+app = FastAPI(
+    title="MONIVEX API",
+    version="0.4.0",
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 
 @app.middleware("http")
@@ -89,7 +95,7 @@ def audit(db, action, user_id=None):
 @app.get("/api/health/ready")
 def ready(db=Depends(get_db)):
     db.execute(text("SELECT id FROM installation LIMIT 1"))
-    return {"status": "ok", "version": "0.3.0"}
+    return {"status": "ok", "version": "0.4.0"}
 
 
 @app.get("/api/setup/status")
@@ -100,7 +106,7 @@ def setup_status(db=Depends(get_db)):
 @app.post("/api/setup", status_code=201, dependencies=[Depends(require_origin)])
 def setup(payload: SetupInput, request: Request, db=Depends(get_db)):
     settings = get_settings()
-    limit_attempt(db, "setup:" + (request.client.host if request.client else "unknown"))
+    limit_attempt(db, "setup:" + client_ip(request))
     if not settings.setup_token or not secrets.compare_digest(
         request.headers.get("x-setup-token", ""), settings.setup_token
     ):
@@ -133,85 +139,6 @@ def setup(payload: SetupInput, request: Request, db=Depends(get_db)):
     return {"detail": "Konfiguracja zakończona. Zaloguj się."}
 
 
-@app.post("/api/auth/login", dependencies=[Depends(require_origin)])
-def login(
-    payload: LoginInput, request: Request, response: Response, db=Depends(get_db)
-):
-    limit_attempt(db, "login:" + (request.client.host if request.client else "unknown"))
-    user = db.scalar(select(User).where(User.username == payload.username))
-    valid = verify(payload.password, user.password_hash if user else DUMMY_HASH)
-    if not user or not valid:
-        audit(db, "auth.login_failed")
-        db.commit()
-        raise HTTPException(401, "Nieprawidłowy login lub hasło.")
-    token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-    now = int(time.time())
-    db.execute(delete(Session).where(Session.expires_at <= now))
-    db.add(
-        Session(
-            token_hash=digest(token),
-            csrf_hash=digest(csrf),
-            user_id=user.id,
-            expires_at=now + get_settings().session_hours * 3600,
-        )
-    )
-    audit(db, "auth.login", user.id)
-    db.commit()
-    response.set_cookie(
-        COOKIE,
-        token,
-        httponly=True,
-        secure=get_settings().cookie_secure,
-        samesite="strict",
-        max_age=get_settings().session_hours * 3600,
-        path="/api",
-    )
-    return {"csrf_token": csrf}
-
-
-@app.get("/api/auth/me")
-def me(user=Depends(current_user)):
-    return {"id": user.id, "username": user.username, "role": user.role}
-
-
-@app.post("/api/auth/logout", status_code=204)
-def logout(response: Response, session=Depends(current_session), db=Depends(get_db)):
-    audit(db, "auth.logout", session.user_id)
-    db.delete(session)
-    db.commit()
-    response.delete_cookie(COOKIE, path="/api")
-
-
-@app.post("/api/auth/logout-all", status_code=204)
-def logout_all(response: Response, user=Depends(current_user), db=Depends(get_db)):
-    db.execute(delete(Session).where(Session.user_id == user.id))
-    audit(db, "auth.logout_all", user.id)
-    db.commit()
-    response.delete_cookie(COOKIE, path="/api")
-
-
-@app.post("/api/auth/password", status_code=204)
-def password(
-    payload: PasswordInput,
-    response: Response,
-    request: Request,
-    user=Depends(current_user),
-    db=Depends(get_db),
-):
-    # current_user already opened a read transaction; end it before the limit transaction.
-    user_id = user.id
-    db.commit()
-    limit_attempt(db, "password:" + str(user_id))
-    user = db.get(User, user_id)
-    if not verify(payload.current_password, user.password_hash):
-        raise HTTPException(400, "Obecne hasło jest nieprawidłowe.")
-    user.password_hash = hasher.hash(payload.new_password)
-    db.execute(delete(Session).where(Session.user_id == user.id))
-    audit(db, "auth.password_changed", user.id)
-    db.commit()
-    response.delete_cookie(COOKIE, path="/api")
-
-
 @app.get("/api/installation")
 def installation(user=Depends(current_user), db=Depends(get_db)):
     row = db.get(Installation, 1)
@@ -219,10 +146,12 @@ def installation(user=Depends(current_user), db=Depends(get_db)):
         "name": row.name,
         "timezone": row.timezone,
         "language": "pl",
-        "version": "0.3.0",
+        "version": "0.4.0",
     }
 
 
 app.include_router(management_router)
 app.include_router(monitoring_router)
 app.include_router(infrastructure_router)
+
+app.include_router(auth_router)

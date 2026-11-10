@@ -21,6 +21,15 @@ def main():
         "08-pulpit-ciemny": "Pulpit — motyw ciemny",
         "09-pulpit-jasny": "Pulpit — motyw jasny",
         "10-mobilny": "Widok mobilny",
+        "11-bezpieczenstwo-konta": "Bezpieczeństwo konta",
+        "12-konfiguracja-2fa-bez-sekretow": "Konfiguracja 2FA — sekrety ukryte",
+        "13-kody-odzyskiwania-zamaskowane": "Kody odzyskiwania — wartości ukryte",
+        "14-aktywne-sesje": "Aktywne sesje — dane urządzeń ukryte",
+        "15-drugi-etap-logowania": "Drugi etap logowania",
+        "16-dziennik-bezpieczenstwa": "Dziennik bezpieczeństwa",
+        "17-sesja-zakonczona": "Obsługa zakończonej sesji",
+        "18-konto-mobilne": "Bezpieczeństwo konta — telefon",
+        "19-logowanie-2fa-mobilne": "Drugi etap logowania — telefon",
     }
     cards = []
     for image in sorted(screens.glob("*.png")):
@@ -44,7 +53,7 @@ def main():
             }
         summary = f"Testy: {counts['tests']} · błędy: {counts['failures'] + counts['errors']} · pominięte: {counts['skipped']}"
     page = (
-        """<!doctype html><html lang="pl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MONIVEX — dowody testów</title><style>body{margin:0;background:#0b101a;color:#e5edf8;font:15px system-ui}main{max-width:1250px;margin:auto;padding:48px 24px}h1{font-size:32px}p{color:#9eacc1;line-height:1.7}article{margin:36px 0;background:#111925;padding:20px;border:1px solid #243044;border-radius:12px}h2{font-size:18px}img{max-width:100%;height:auto;border-radius:8px}a{color:#5ce2c3}.badge{color:#5ce2c3;font-size:12px;text-transform:uppercase;letter-spacing:2px}</style><main><div class="badge">MONIVEX 0.3.0 · środowisko testowe</div><h1>Rzeczywiste ekrany i testy aplikacji</h1><p>Galeria powstaje podczas testów pełnego stacku Docker Compose. Dane są jednorazowymi danymi testowymi; wyniki monitoringu pochodzą z działającego workera. Sekrety i pola prywatne są maskowane. Nie dołączamy baz, konfiguracji środowiskowej, nagrań ani śladów formularzy.</p><p>"""
+        """<!doctype html><html lang="pl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MONIVEX — dowody testów</title><style>body{margin:0;background:#0b101a;color:#e5edf8;font:15px system-ui}main{max-width:1250px;margin:auto;padding:48px 24px}h1{font-size:32px}p{color:#9eacc1;line-height:1.7}article{margin:36px 0;background:#111925;padding:20px;border:1px solid #243044;border-radius:12px}h2{font-size:18px}img{max-width:100%;height:auto;border-radius:8px}a{color:#5ce2c3}.badge{color:#5ce2c3;font-size:12px;text-transform:uppercase;letter-spacing:2px}</style><main><div class="badge">MONIVEX 0.4.0 · środowisko testowe</div><h1>Rzeczywiste ekrany i testy aplikacji</h1><p>Galeria powstaje podczas testów pełnego stacku Docker Compose. Dane są jednorazowymi danymi testowymi; wyniki monitoringu pochodzą z działającego workera. Sekrety i pola prywatne są maskowane. Nie dołączamy baz, konfiguracji środowiskowej, nagrań ani śladów formularzy.</p><p>"""
         + escape(summary)
         + """</p><p><a href="test-results.xml">Raport JUnit XML</a></p>"""
         + "".join(cards)

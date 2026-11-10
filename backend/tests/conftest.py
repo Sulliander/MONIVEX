@@ -1,5 +1,7 @@
 import os
 import tempfile
+import time
+from types import SimpleNamespace
 from pathlib import Path
 import pytest
 
@@ -77,3 +79,13 @@ def logged_in(initialized, payload):
     assert result.status_code == 200
     initialized.headers["X-CSRF-Token"] = result.json()["csrf_token"]
     return initialized
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    now = [int(time.time())]
+    fake = SimpleNamespace(time=lambda: now[0])
+    monkeypatch.setattr("app.auth.routes.time", fake)
+    monkeypatch.setattr("app.auth.totp.time", fake)
+    monkeypatch.setattr("app.security.time", fake)
+    return now
