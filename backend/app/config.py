@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     setup_token: str = Field(default="", repr=False)
     public_origin: str = "http://localhost:8080"
     cookie_secure: bool = True
+    public_profile: bool = False
+    trusted_proxies: str = ""
     allowed_networks: str = ""
     encryption_key: str = Field(default="", repr=False)
     worker_concurrency: int = Field(default=10, ge=1, le=100)

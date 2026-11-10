@@ -1,17 +1,17 @@
-# API — etapy 1 i 2
+# API — MONIVEX 0.4.0
 
-OpenAPI: `/openapi.json`, eksplorator: `/docs` na wewnętrznym porcie API (8000). Port ten nie jest publikowany przez Compose. Nazwy endpointów i pól pozostają angielskie, komunikaty aplikacyjne są polskie.
+Publiczne endpointy `/openapi.json`, `/docs` i `/redoc` są wyłączone. Schemat do narzędzi developerskich można wygenerować offline przez `app.openapi()`. Port API 8000 nie jest publikowany przez Compose. Nazwy endpointów i pól pozostają angielskie, komunikaty aplikacyjne są polskie.
 
 | Metoda i ścieżka | Dostęp i zachowanie |
 | --- | --- |
 | GET `/api/health/ready` | Publiczne, sprawdza schemat i połączenie z bazą |
 | GET `/api/setup/status` | Publiczne, zwraca tylko `initialized` |
 | POST `/api/setup` | Origin i `X-Setup-Token`; username, password, installation_name, timezone; tylko raz |
-| POST `/api/auth/login` | Origin, username/password; ustawia HttpOnly cookie i zwraca `csrf_token` |
-| GET `/api/auth/me` | Sesja; id, username, role |
+| POST `/api/auth/login` | Origin, username/password; bez 2FA cookie i `csrf_token`; z 2FA tylko `two_factor_required:true` i cookie wyzwania |
+| GET `/api/auth/me` | Sesja; id, username, role, two_factor_enabled, setup_required |
 | POST `/api/auth/logout` | Sesja, Origin i CSRF; unieważnia bieżącą sesję |
 | POST `/api/auth/logout-all` | Sesja, Origin i CSRF; unieważnia wszystkie sesje użytkownika |
-| POST `/api/auth/password` | Sesja, Origin i CSRF; current_password/new_password; unieważnia wszystkie sesje |
+| POST `/api/auth/password` | Sesja, Origin i CSRF; current_password/new_password i code przy 2FA; unieważnia wszystkie sesje i wyzwania |
 | GET `/api/installation` | Sesja; nazwa, strefa, język, wersja |
 | GET `/api/dashboard` | Sesja; aktualne stany, ostatni cykl workera i otwarte incydenty |
 
@@ -58,3 +58,24 @@ PUT wymaga bieżącej `revision` w JSON, DELETE w parametrze zapytania. Konflikt
 Konfiguracja zbiorcza zmienia interwał, timeout, progi, priorytet oraz powiązania. Pominięcie pola pozostawia wartość, `group_id:null`/`resource_id:null` odłącza, `tag_ids:[]` czyści tagi. Błąd walidacji lub rewizji odrzuca całą operację. Stany wynikają z workera; konfiguracja nie przyjmuje ręcznie podanego stanu dostępności.
 
 `/api/dashboard` zwraca dodatkowo `counts` obejmujące wszystkie monitory. Starsze GET `/api/monitors` pozostaje zgodne z poprzednim formatem tablicy do 1000 pozycji; nowy interfejs używa paginacji `/search`.
+
+## Bezpieczeństwo konta — 0.4.0
+
+| Metoda i ścieżka | Dostęp i zachowanie |
+| --- | --- |
+| POST `/api/auth/login/verify` | Origin + cookie wyzwania; `{code}` TOTP lub odzyskiwania; dopiero sukces tworzy pełną sesję i zwraca `csrf_token` |
+| POST `/api/auth/login/cancel` | Origin; usuwa bieżące wyzwanie i jego cookie |
+| POST `/api/auth/csrf` | Sesja + Origin, wyjątek od wcześniejszego CSRF; uzyskanie tokenu dla nowej karty |
+| GET `/api/auth/security` | Sesja; status 2FA, liczba pozostałych kodów, polityka i możliwość jej zmiany |
+| POST `/api/auth/2fa/setup` | Sesja + Origin/CSRF + current_password; tylko nieaktywne 2FA; nowy sekret i QR `data:` jednorazowo w odpowiedzi |
+| POST `/api/auth/2fa/enable` | Sesja + Origin/CSRF + current_password/code; weryfikacja nieaktywnego sekretu; dziesięć recovery_codes i odnowiony csrf_token |
+| POST `/api/auth/2fa/disable` | Sesja + Origin/CSRF + current_password/code; usuwa sekret/kody, odnawia sesję; 409 przy wymogu administratorów |
+| POST `/api/auth/2fa/recovery-codes` | Sesja + Origin/CSRF + current_password/code; zastępuje wszystkie kody, odnawia sesję, zwraca nowe recovery_codes tylko raz |
+| PUT `/api/auth/policy` | Właściciel + Origin/CSRF + current_password/code + require_admin_totp; wymaga wcześniej aktywnego 2FA przy włączaniu |
+| GET `/api/auth/sessions` | Własne aktywne sesje: id, current, created_at, expires_at, client_ip, user_agent; bez hashy/tokenów |
+| DELETE `/api/auth/sessions/{id}` | Sesja + Origin/CSRF; tylko własna sesja; 404 dla cudzej lub nieistniejącej |
+| GET `/api/auth/events?limit=50&before=ID` | Własne zdarzenia bezpieczeństwa; limit 1–100; `{items,next_before}` |
+
+Aktywacja/wyłączenie/regeneracja zwracają nowy `csrf_token` po rotacji bieżącej sesji i unieważnieniu pozostałych sesji/wyzwań. Kody odzyskiwania są akceptowane także w polu `code` przy ponownym uwierzytelnieniu. 400 oznacza błędny/zużyty kod lub nieudaną reautoryzację, 401 brak/wygaśnięcie sesji albo wyzwania, 409 konflikt stanu/polityki, 429 trwałą blokadę (`Retry-After`), 503 niedostępny klucz lub bazę. Odpowiedzi walidacyjne nie odsyłają wejściowych sekretów.
+
+Po włączeniu wymogu administrator bez aktywnego TOTP ma dostęp do własnych `/api/auth/*` i podstawowych metadanych instalacji; pozostałe API zwraca 403 do czasu konfiguracji. Nie istnieje publiczny endpoint odczytu aktywnego sekretu, resetu 2FA, rejestracji ani resetu hasła. Szczegółowe czasy, limity i zasady: [bezpieczeństwo konta](BEZPIECZENSTWO_KONTA.md).

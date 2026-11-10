@@ -8,7 +8,10 @@ Skopiuj `.env.example` do `.env`, ogranicz prawa `chmod 600 .env`. Sekret wygene
 
 Dane znajdują się w nazwanym wolumenie `monivex_data`. `docker compose down` go zachowuje, `down -v` bezpowrotnie usuwa także konta i historię. Nigdy nie używaj `down -v` przy aktualizacji. Przed aktualizacją wykonaj kopię offline i przeczytaj migracje. Nie uruchamiaj równolegle dwóch kontenerów migracji na tej samej bazie.
 
-## Reverse proxy
+## Reverse proxy lokalne / LAN
+
+Dla nowego wdrożenia internetowego użyj osobnego [profilu VPS/HTTPS](WDROZENIE_VPS.md). Poniższe minimalne przykłady nie konfigurują identyfikacji klienta; limit pozostaje wspólny dla klientów lokalnego Nginx.
+
 
 Aplikacja zakłada ścieżkę główną `/`, nie podkatalog. API nie jest publikowane na hoście; tylko WEB. Dla proxy na hoście pozostaw bind `127.0.0.1`, port 8080 i ustaw origin HTTPS. Nie przekazuj zaufania do nagłówków proxy od dowolnych klientów.
 
@@ -50,7 +53,7 @@ export MONIVEX_COOKIE_SECURE=false
 read -rs MONIVEX_SETUP_TOKEN
 export MONIVEX_SETUP_TOKEN
 .venv/bin/alembic upgrade head
-.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log
+.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-proxy-headers --no-access-log
 ```
 
 W drugim terminalu `cd frontend && npm run dev`. Vite przekazuje `/api` do lokalnego backendu. Serwer developerski nie służy do publicznego wdrożenia.
@@ -79,3 +82,9 @@ Po przejściu testu przeglądarkowego z `MONIVEX_TEST_WORKER=1` na jednorazowym 
 ## Aktualizacja do 0.3.0
 
 Zachowaj dane i klucz szyfrowania; przed aktualizacją wykonaj kopię offline przy zatrzymanych API i workerze. `docker compose up --build -d` wykona migrację `0003`: zasoby, grupy, tagi, powiązania i przydział identyfikatorów bez przepisywania tabeli monitorów. Testy obejmują zachowanie wcześniejszych wyników, incydentów i sesji. Cofnięcie tej migracji usuwa nowe metadane — nie stosuj go jako zamiennika backupu. Poradnik nowych ekranów: ZARZADZANIE_INFRASTRUKTURA.md; artefakty CI: TESTY_I_ZRZUTY.md.
+
+## Aktualizacja do 0.4.0
+
+Zatrzymaj WEB, API i worker, wykonaj kopię offline całego wolumenu i zachowaj `.env` oraz dotychczasowy klucz szyfrowania. Zbuduj obrazy, wykonaj `docker compose run --rm migrate`, następnie `docker compose up -d --force-recreate`. Nie usuwaj wolumenu i nie wykonuj `down -v`. Migracja 0004 dodaje kolumny i tabele bezpieczeństwa bez przebudowy użytkowników, sesji, monitorów i historii. Obecne sesje i CSRF zachowują ważność; dla starszych sesji metadane urządzenia są nieznane. Polityka obowiązkowego 2FA domyślnie pozostaje wyłączona. Starsze logowanie hasłem działa nadal do samodzielnej aktywacji TOTP.
+
+Klucz `MONIVEX_ENCRYPTION_KEY` jest teraz także wymagany do konfiguracji 2FA. Jeśli już istnieje, zachowaj go bez zmian. Jeżeli nie był dotąd używany, wygeneruj go raz i wykonaj bezpieczną kopię. Podmiana klucza nie jest procedurą jego rotacji.

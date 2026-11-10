@@ -40,3 +40,9 @@ Można wybrać systemowy Chromium przez `MONIVEX_CHROMIUM=/usr/bin/chromium`. Te
 ## Dostęp z chmury Codex
 
 Push do GitHub uruchamia workflow. Jego status można sprawdzić także na publicznej stronie przebiegu. Odczyt logów i artefaktów przez `gh` wymaga dostępu do `api.github.com` i odpowiedniego uwierzytelniania. Zapisanie domeny w szkicu ustawień środowiska nie stosuje jeszcze zmiany — ustawienia trzeba zapisać i opublikować. Nie obchodź blokad sieci ani nie umieszczaj tokenów w czacie.
+
+## Przyrost 0.4.0
+
+Przeglądarka przechodzi dodatkowo QR/ręczny sekret, aktywację, pobranie i ukrycie kodów, logowanie TOTP, odrzucenie ponownego TOTP, dwa konteksty urządzeń, unieważnienie sesji, odzyskiwanie, regenerację i odrzucenie starych kodów, politykę administratorów, zmianę hasła z drugim składnikiem, wyłączenie 2FA, nową kartę/CSRF i wylogowanie wszystkich urządzeń. Powstaje 19 jawnie wybranych zrzutów. Sekrety QR, ręczne, recovery, kody i hasła mają `data-private`; metadane sesji również są maskowane. Nie włączamy automatycznych screenshotów błędów, trace ani video. Pobrany plik kodów nie jest artefaktem CI.
+
+Testy backendu sprawdzają RFC 6238, współbieżne użycie TOTP i recovery, trwałe limity, izolację danych użytkowników, rotację tokenów, wymóg 2FA, Origin/CSRF, migrację ze schematu 0003 oraz osobne procesy API odczytujące utrwalone wyzwanie i ochronę replay. `scripts/verify_public_https.py` testuje właściwy profil publiczny z lokalnym CA, bez kontaktu z VPS i bez ACME. CI uruchamia go po teście niezależności workera; po zakończeniu usuwa tylko jednorazowy projekt HTTPS.

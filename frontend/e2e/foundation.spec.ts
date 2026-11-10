@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { capture } from "./evidence";
+import { securityFlow } from "./security";
 import { randomBytes } from "node:crypto";
 let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 test.afterEach(() => {
@@ -53,13 +54,19 @@ test("pierwsza konfiguracja, sesja, motyw, hasło i ponowne logowanie", async ({
   await expect(page.getByRole("heading", { name: "Przegląd" })).toBeVisible();
   await page.getByRole("link", { name: "Ustawienia", exact: true }).click();
   await page.getByLabel("Obecne hasło").fill(password);
-  await page.getByLabel("Nowe hasło").fill(password + "changed");
+  await page
+    .getByLabel("Nowe hasło", { exact: true })
+    .fill(password + "changed");
+  await page.getByLabel("Powtórz nowe hasło").fill(password + "changed");
   await page
     .getByRole("button", { name: "Zmień hasło i zakończ sesje" })
     .click();
   await expect(
     page.getByRole("heading", { name: "Zaloguj się" }),
   ).toBeVisible();
+  await expect(page.getByRole("status")).toContainText(
+    "Hasło zostało zmienione",
+  );
   await login(password + "changed");
   await expect(page.getByRole("heading", { name: "Przegląd" })).toBeVisible();
   if (process.env.MONIVEX_TEST_WORKER === "1") {
@@ -262,6 +269,7 @@ test("pierwsza konfiguracja, sesja, motyw, hasło i ponowne logowanie", async ({
     await page.getByLabel("Motyw").selectOption("light");
     await capture(page, "09-pulpit-jasny");
   }
+  await securityFlow(page, password + "changed");
   await page.setViewportSize({ width: 390, height: 844 });
   await capture(page, "10-mobilny");
   await page.getByRole("button", { name: "Zwiń lub rozwiń menu" }).click();

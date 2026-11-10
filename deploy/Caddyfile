@@ -1,0 +1,20 @@
+{
+    email {$MONIVEX_ACME_EMAIL}
+    admin off
+}
+
+{$MONIVEX_DOMAIN} {
+    encode zstd gzip
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+    @internal path /api/health/ready /docs /redoc /openapi.json
+    respond @internal 404
+    # Caddy ignores client-supplied forwarding headers and sets X-Forwarded-For.
+    # Its admin API is disabled; API, worker and database have no published ports.
+    reverse_proxy web:8080
+}

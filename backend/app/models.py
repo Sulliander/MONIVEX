@@ -1,3 +1,4 @@
+import secrets
 from sqlalchemy import (
     String,
     Integer,
@@ -25,6 +26,10 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(Text)
     role: Mapped[str] = mapped_column(String(24), default="owner")
     created_at: Mapped[int] = mapped_column(Integer)
+    totp_secret: Mapped[str | None] = mapped_column(Text)
+    totp_pending_secret: Mapped[str | None] = mapped_column(Text)
+    totp_pending_expires: Mapped[int | None] = mapped_column(Integer)
+    totp_last_step: Mapped[int] = mapped_column(Integer, default=-1)
 
 
 class Installation(Base):
@@ -32,13 +37,36 @@ class Installation(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
     timezone: Mapped[str] = mapped_column(String(64))
+    require_admin_totp: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[int] = mapped_column(Integer)
+
+
+class LoginChallenge(Base):
+    __tablename__ = "login_challenges"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    expires_at: Mapped[int] = mapped_column(Integer, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class RecoveryCode(Base):
+    __tablename__ = "recovery_codes"
+    code_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
 
 
 class Session(Base):
     __tablename__ = "sessions"
     token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    id: Mapped[str] = mapped_column(
+        String(64), unique=True, default=lambda: secrets.token_hex(16)
+    )
+    created_at: Mapped[int] = mapped_column(Integer, default=0)
+    client_ip: Mapped[str] = mapped_column(String(64), default="")
+    user_agent: Mapped[str] = mapped_column(String(200), default="")
     csrf_hash: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[int] = mapped_column(Integer, index=True)
 
